@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,6 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.session import init_db
 from app.routes import health, players, matches
 from dota_core.domain.heroes import hero_name as _prewarm_heroes
+
+# Comma-separated list of allowed origins.
+# Set ALLOWED_ORIGINS in production env vars (e.g. "https://your-app.vercel.app").
+# Defaults to localhost for local dev.
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+_ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +43,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

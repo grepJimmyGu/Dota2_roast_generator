@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "dota2-mmr"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx",
+    "python-dotenv",
+    "pandas",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2.0",
+    "sqlalchemy>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

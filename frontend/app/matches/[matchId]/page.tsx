@@ -3,13 +3,44 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { MatchDetail } from "@/lib/types";
+import { MatchDetail, PhaseStatEntry } from "@/lib/types";
 import ScoreBadge from "@/components/ScoreBadge";
 import PhaseBar from "@/components/PhaseBar";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { STAT_LABEL, Locale } from "@/lib/i18n";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+const POSITION_LABELS: Record<number, string> = {
+  1: "Carry", 2: "Mid", 3: "Offlane", 4: "Soft Support", 5: "Hard Support",
+};
+
+function SectionHeader({ label }: { label: string }) {
+  return <h2 className="text-xs text-gray-500 uppercase tracking-wide">{label}</h2>;
+}
+
+function StatRow({ label, value }: { label: string; value: number | null }) {
+  if (value === null || value === 0) return null;
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className="text-xs text-gray-300 tabular-nums">{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+function PhaseStatsCard({ stats, t }: { stats: PhaseStatEntry; t: ReturnType<typeof useLanguage>["t"] }) {
+  return (
+    <div className="flex flex-col gap-1 pt-2 border-t border-gray-700/50 mt-2">
+      <StatRow label={t.statNetWorth}    value={stats.netWorth}    />
+      <StatRow label={t.statHeroDamage}  value={stats.heroDamage}  />
+      <StatRow label={t.statTowerDamage} value={stats.towerDamage} />
+      <StatRow label={t.statLastHits}    value={stats.lastHits}    />
+      <StatRow label={t.statKills}       value={stats.kills}       />
+      <StatRow label={t.statDeaths}      value={stats.deaths}      />
+    </div>
+  );
+}
 
 export default function MatchDetailPage() {
   const { matchId }  = useParams<{ matchId: string }>();
@@ -44,10 +75,18 @@ export default function MatchDetailPage() {
 
   const backHref = steamId ? `/players/${steamId}` : "/";
 
-  // Translate backend stat labels to current locale
   function translateStat(label: string): string {
     return STAT_LABEL[label]?.[locale as Locale] ?? label;
   }
+
+  const overallScore =
+    data.overallPositionScore !== null && data.overallHeroScore !== null
+      ? Math.round(((data.overallPositionScore + data.overallHeroScore) / 2) * 10) / 10
+      : data.overallPositionScore ?? data.overallHeroScore;
+
+  const consistencyColor: Record<string, string> = {
+    Consistent: "text-green-400", Variable: "text-yellow-400", Volatile: "text-red-400",
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -69,111 +108,148 @@ export default function MatchDetailPage() {
               {data.heroName ?? `Hero #${data.heroId}`}
             </h1>
             <p className="text-gray-400 text-sm mt-0.5">
-              {t.positions[data.position] ?? `Position ${data.position}`} ·{" "}
-              {data.durationMinutes}m · #{data.matchId}
+              {POSITION_LABELS[data.position] ?? `Position ${data.position}`} · {data.durationMinutes}m · #{data.matchId}
             </p>
+            {data.performanceProfile && (
+              <span className="text-xs text-indigo-400 mt-1 inline-block">{data.performanceProfile}</span>
+            )}
           </div>
-          <span
-            className={`flex-shrink-0 text-sm font-semibold px-3 py-1 rounded-full ${
-              data.result === "win"
-                ? "bg-green-900/50 text-green-400"
-                : data.result === "loss"
-                ? "bg-red-900/50 text-red-400"
-                : "bg-gray-800 text-gray-500"
-            }`}
-          >
+          <span className={`flex-shrink-0 text-sm font-semibold px-3 py-1 rounded-full ${
+            data.result === "win" ? "bg-green-900/50 text-green-400"
+            : data.result === "loss" ? "bg-red-900/50 text-red-400"
+            : "bg-gray-800 text-gray-500"
+          }`}>
             {data.result === "win" ? t.victory : data.result === "loss" ? t.defeat : t.unknown}
           </span>
         </div>
       </div>
 
-      {/* Overall scores */}
-      <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
-        <div className="flex justify-around">
-          <ScoreBadge
-            score={
-              data.overallPositionScore !== null && data.overallHeroScore !== null
-                ? Math.round(((data.overallPositionScore + data.overallHeroScore) / 2) * 10) / 10
-                : data.overallPositionScore ?? data.overallHeroScore
-            }
-            label={t.overall}
-            size="lg"
-          />
-          <ScoreBadge score={data.overallPositionScore} label={t.roleLabel} />
-          <ScoreBadge score={data.overallHeroScore}     label={t.heroLabel} />
-        </div>
-
-        {data.gameCloseness !== null && data.gameCloseness !== undefined && (
-          <div className="flex justify-center">
-            <span className="text-xs text-gray-500">
-              {t.gameBalance}:{" "}
-              <span className="text-gray-400">
-                {data.gameCloseness >= 0.8
-                  ? t.evenGame
-                  : data.gameCloseness >= 0.5
-                  ? t.moderatelyOneSided
-                  : t.heavilyOneSided}
+      {/* Bucket 1: Performance */}
+      <div className="flex flex-col gap-3">
+        <SectionHeader label={t.sectionPerformance} />
+        <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
+          <div className="flex justify-around">
+            <div className="flex flex-col items-center gap-0.5">
+              <ScoreBadge score={overallScore} label={t.overall} size="lg" />
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <ScoreBadge score={data.overallPositionScore} label={t.roleLabel} />
+              <span className="text-gray-600 text-xs text-center max-w-[80px] leading-tight">
+                {t.benchmarkRoleExplain}
               </span>
-              <span className="text-gray-600 ml-1">({(data.gameCloseness * 100).toFixed(0)}%)</span>
-            </span>
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <ScoreBadge score={data.overallHeroScore} label={t.heroLabel} />
+              <span className="text-gray-600 text-xs text-center max-w-[80px] leading-tight">
+                {t.benchmarkHeroExplain}
+              </span>
+            </div>
           </div>
-        )}
 
-        {!data.hasBenchmarkContext && (
-          <p className="text-gray-600 text-xs text-center border-t border-gray-800 pt-3">
-            {t.benchmarkUnavailable}
-          </p>
-        )}
+          {data.gameCloseness !== null && data.gameCloseness !== undefined && (
+            <div className="flex justify-center">
+              <span className="text-xs text-gray-500">
+                {t.gameBalance}:{" "}
+                <span className="text-gray-400">
+                  {data.gameCloseness >= 0.8 ? t.evenGame
+                    : data.gameCloseness >= 0.5 ? t.moderatelyOneSided
+                    : t.heavilyOneSided}
+                </span>
+              </span>
+            </div>
+          )}
 
-        {data.shortSummary && data.hasBenchmarkContext && (
-          <p className="text-gray-400 text-sm text-center leading-snug border-t border-gray-800 pt-3">
-            {data.shortSummary}
-          </p>
-        )}
+          {!data.hasBenchmarkContext && (
+            <p className="text-gray-600 text-xs text-center">{t.benchmarkUnavailable}</p>
+          )}
+
+          {data.matchNarrative && data.hasBenchmarkContext && (
+            <p className="text-gray-300 text-sm leading-relaxed border-t border-gray-800 pt-3">
+              {data.matchNarrative}
+            </p>
+          )}
+
+          {data.hasBenchmarkContext && (
+            <p className="text-gray-600 text-xs">{t.heuristicNote}</p>
+          )}
+        </div>
       </div>
 
-      {/* Phase breakdown */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-xs text-gray-500 uppercase tracking-wide">{t.phaseBreakdown}</h2>
+      {/* Phase Breakdown */}
+      <div className="flex flex-col gap-3">
+        <SectionHeader label={t.phaseBreakdown} />
         <PhaseBar
           early={data.phaseBreakdown.early_game}
           mid={data.phaseBreakdown.mid_game}
           late={data.phaseBreakdown.late_game}
           strongestPhase={data.strongestPhase}
           weakestPhase={data.weakestPhase}
+          phaseNarrative={data.phaseNarrative}
+          phaseStats={data.phaseStats}
         />
       </div>
 
-      {/* Strengths & weaknesses */}
-      {(data.topStrengths || data.topWeaknesses) && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gray-900 rounded-xl p-4">
-            <h2 className="text-xs text-gray-500 uppercase tracking-wide mb-3">{t.strengths}</h2>
-            {data.topStrengths && data.topStrengths.length > 0 ? (
-              <ul className="flex flex-col gap-1.5">
-                {data.topStrengths.map((s) => (
-                  <li key={s} className="text-green-400 text-sm flex items-center gap-1.5">
-                    <span className="text-green-600 text-xs">▲</span> {translateStat(s)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-600 text-xs">{t.noneIdentified}</p>
+      {/* Bucket 2: What Went Well */}
+      {(data.biggestEdge || (data.topStrengths && data.topStrengths.length > 0)) && (
+        <div className="flex flex-col gap-3">
+          <SectionHeader label={t.sectionWentWell} />
+          <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-3">
+            {data.biggestEdge && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">{t.biggestEdge}</p>
+                <p className="text-green-400 text-sm">{data.biggestEdge}</p>
+              </div>
+            )}
+            {data.topStrengths && data.topStrengths.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">{t.strengths}</p>
+                <ul className="flex flex-col gap-1.5">
+                  {data.topStrengths.map((s) => (
+                    <li key={s} className="text-green-400 text-sm flex items-center gap-1.5">
+                      <span className="text-green-600 text-xs">▲</span> {translateStat(s)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
-          <div className="bg-gray-900 rounded-xl p-4">
-            <h2 className="text-xs text-gray-500 uppercase tracking-wide mb-3">{t.weaknesses}</h2>
-            {data.topWeaknesses && data.topWeaknesses.length > 0 ? (
-              <ul className="flex flex-col gap-1.5">
-                {data.topWeaknesses.map((w) => (
-                  <li key={w} className="text-red-400 text-sm flex items-center gap-1.5">
-                    <span className="text-red-600 text-xs">▼</span> {translateStat(w)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-600 text-xs">{t.noneIdentified}</p>
+        </div>
+      )}
+
+      {/* Bucket 3: What Hurt Most */}
+      {(data.biggestLiability || (data.topWeaknesses && data.topWeaknesses.length > 0)) && (
+        <div className="flex flex-col gap-3">
+          <SectionHeader label={t.sectionHurtMost} />
+          <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-3">
+            {data.biggestLiability && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">{t.biggestLiability}</p>
+                <p className="text-red-400 text-sm">{data.biggestLiability}</p>
+              </div>
             )}
+            {data.topWeaknesses && data.topWeaknesses.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1.5">{t.weaknesses}</p>
+                <ul className="flex flex-col gap-1.5">
+                  {data.topWeaknesses.map((w) => (
+                    <li key={w} className="text-red-400 text-sm flex items-center gap-1.5">
+                      <span className="text-red-600 text-xs">▼</span> {translateStat(w)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bucket 4: What to Work On */}
+      {data.improvementSuggestion && (
+        <div className="flex flex-col gap-3">
+          <SectionHeader label={t.sectionWorkOn} />
+          <div className="bg-gray-900 rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-1">{t.improvementFocus}</p>
+            <p className="text-indigo-300 text-sm leading-relaxed">{data.improvementSuggestion}</p>
           </div>
         </div>
       )}
@@ -193,7 +269,7 @@ function LoadingSkeleton() {
         <div className="h-7 w-16 bg-gray-800 rounded-full" />
       </div>
       <div className="bg-gray-900 rounded-xl p-6 flex justify-around">
-        {[0, 1, 2].map((i) => (
+        {[0,1,2].map((i) => (
           <div key={i} className="flex flex-col items-center gap-2">
             <div className="h-8 w-14 bg-gray-800 rounded" />
             <div className="h-3 w-10 bg-gray-800 rounded" />
@@ -201,7 +277,7 @@ function LoadingSkeleton() {
         ))}
       </div>
       <div className="grid grid-cols-3 gap-3">
-        {[0, 1, 2].map((i) => <div key={i} className="bg-gray-800 rounded-lg h-24" />)}
+        {[0,1,2].map((i) => <div key={i} className="bg-gray-800 rounded-lg h-28" />)}
       </div>
     </div>
   );

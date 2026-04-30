@@ -38,6 +38,10 @@ from app.services.scoring_utils import (
     derive_strengths_weaknesses,
     derive_phase_labels,
     generate_player_summary,
+    generate_player_narrative,
+    compute_consistency_rating,
+    compute_recurring_patterns,
+    get_performance_archetype,
 )
 from app.errors import PlayerNotFoundError, StratzAPIError
 
@@ -140,13 +144,20 @@ def _build_cached_overview(
 
     score_rows = list(scores_by_match.values())
     strongest_phase, weakest_phase = _compute_player_phase_labels(score_rows)
-    recent_trend = _compute_recent_trend(scored)
-    short_summary = generate_player_summary(
-        strongest_phase=strongest_phase,
-        weakest_phase=weakest_phase,
-        recent_trend=recent_trend,
-        average_overall_score=agg.get("averageOverallScore"),
+    recent_trend   = _compute_recent_trend(scored)
+    archetype      = _compute_archetype(matches)
+    recurring_s, recurring_w = compute_recurring_patterns(score_rows)
+    consistency    = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
+    short_summary  = generate_player_summary(
+        strongest_phase=strongest_phase, weakest_phase=weakest_phase,
+        recent_trend=recent_trend, average_overall_score=agg.get("averageOverallScore"),
         match_count=len(matches),
+    )
+    player_narrative = generate_player_narrative(
+        archetype=archetype, strongest_phase=strongest_phase, weakest_phase=weakest_phase,
+        recurring_strengths=recurring_s, recurring_weaknesses=recurring_w,
+        consistency_rating=consistency, recent_trend=recent_trend,
+        average_overall_score=agg.get("averageOverallScore"), match_count=len(matches),
     )
 
     return PlayerOverviewResponse(
@@ -163,6 +174,11 @@ def _build_cached_overview(
         shortSummary=short_summary,
         bestHeroes=_compute_best_heroes(scored),
         recentTrend=recent_trend,
+        playerNarrative=player_narrative,
+        recurringStrengths=recurring_s,
+        recurringWeaknesses=recurring_w,
+        consistencyRating=consistency,
+        performanceArchetype=archetype,
         isStale=is_stale,
         refreshRecommended=is_stale,
         lastRefreshedAt=player.last_refreshed_at,
@@ -294,16 +310,23 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         failedMatchCount=fail_count,
     )
 
-    # Load persisted scores for phase label computation (covers all scored matches, not just live N)
     all_scores = sr.get_for_player(steam_id, limit=match_count)
+    matches_orm = mr.get_for_player(steam_id, limit=match_count)
     strongest_phase, weakest_phase = _compute_player_phase_labels(all_scores)
-    recent_trend = _compute_recent_trend(scored)
-    short_summary = generate_player_summary(
-        strongest_phase=strongest_phase,
-        weakest_phase=weakest_phase,
-        recent_trend=recent_trend,
-        average_overall_score=agg.get("averageOverallScore"),
+    recent_trend   = _compute_recent_trend(scored)
+    archetype      = _compute_archetype(matches_orm)
+    recurring_s, recurring_w = compute_recurring_patterns(all_scores)
+    consistency    = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
+    short_summary  = generate_player_summary(
+        strongest_phase=strongest_phase, weakest_phase=weakest_phase,
+        recent_trend=recent_trend, average_overall_score=agg.get("averageOverallScore"),
         match_count=len(df),
+    )
+    player_narrative = generate_player_narrative(
+        archetype=archetype, strongest_phase=strongest_phase, weakest_phase=weakest_phase,
+        recurring_strengths=recurring_s, recurring_weaknesses=recurring_w,
+        consistency_rating=consistency, recent_trend=recent_trend,
+        average_overall_score=agg.get("averageOverallScore"), match_count=len(df),
     )
 
     return PlayerOverviewResponse(
@@ -320,6 +343,11 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         shortSummary=short_summary,
         bestHeroes=_compute_best_heroes(scored),
         recentTrend=recent_trend,
+        playerNarrative=player_narrative,
+        recurringStrengths=recurring_s,
+        recurringWeaknesses=recurring_w,
+        consistencyRating=consistency,
+        performanceArchetype=archetype,
         isStale=False,
         refreshRecommended=False,
         lastRefreshedAt=player.last_refreshed_at,
@@ -496,6 +524,16 @@ def _compute_best_heroes(scored: list[MatchSummarySchema]) -> list[dict] | None:
         reverse=True,
     )
     return ranked[:3] or None
+
+
+def _compute_archetype(matches) -> str | None:
+    """Return the position-based archetype label for the most-played position."""
+    from collections import Counter
+    counts = Counter(m.position for m in matches if m.position)
+    if not counts:
+        return None
+    dominant = counts.most_common(1)[0][0]
+    return get_performance_archetype(dominant)
 
 
 def _compute_player_phase_labels(score_rows) -> tuple[str | None, str | None]:

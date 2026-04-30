@@ -26,10 +26,17 @@ from dota_core.api.schemas import (
 )
 from app.db.session import get_session
 from app.repositories.match_repo import MatchRepository
+from dota_core.scoring.features import extract_phase_stats
 from app.services.scoring_utils import (
     derive_strengths_weaknesses,
     derive_phase_labels,
     generate_match_summary,
+    generate_match_narrative,
+    generate_phase_narrative,
+    generate_biggest_edge,
+    generate_biggest_liability,
+    generate_improvement_suggestion,
+    get_performance_archetype,
 )
 from app.errors import MatchNotFoundError, StratzAPIError
 
@@ -78,13 +85,19 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
     won          = detail.get("won")
 
     # --- Scoring (non-fatal: failures produce isPartial=True) ---
-    scores:          dict = {}
-    strengths:       list[str] | None = None
-    weaknesses:      list[str] | None = None
-    strongest_phase: str | None = None
-    weakest_phase:   str | None = None
-    short_summary:   str | None = None
-    is_partial       = False
+    scores:               dict = {}
+    strengths:            list[str] | None = None
+    weaknesses:           list[str] | None = None
+    strongest_phase:      str | None = None
+    weakest_phase:        str | None = None
+    short_summary:        str | None = None
+    match_narrative:      str | None = None
+    phase_narrative:      dict | None = None
+    biggest_edge:         str | None = None
+    biggest_liability:    str | None = None
+    improvement_suggestion: str | None = None
+    phase_stats:          dict | None = None
+    is_partial            = False
 
     try:
         phase_bms = get_phase_benchmarks(
@@ -114,6 +127,46 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
             is_partial=False,
             scored_stat_count=scored_stat_count,
         )
+
+        # UI v1 — richer content
+        match_narrative = generate_match_narrative(
+            strongest_phase=strongest_phase,
+            weakest_phase=weakest_phase,
+            strengths=strengths,
+            weaknesses=weaknesses,
+            overall_position_score=scores.get("overall_position_score"),
+            overall_hero_score=scores.get("overall_hero_score"),
+            position=position,
+            is_partial=False,
+            scored_stat_count=scored_stat_count,
+        )
+        biggest_edge      = generate_biggest_edge(strengths, strongest_phase, stat_breakdown)
+        biggest_liability = generate_biggest_liability(weaknesses, weakest_phase)
+        improvement_suggestion = generate_improvement_suggestion(weakest_phase, weaknesses, position)
+
+        # Per-phase stats for display
+        raw_phase_data = extract_phase_stats(detail, duration_sec, hero_id=hero_id, position=position)
+        phase_stats = {
+            phase: {
+                "netWorth":   round(ps.get("net_worth_gain")  or 0),
+                "heroDamage": round(ps.get("damage_dealt")    or 0),
+                "towerDamage":round(ps.get("tower_damage")    or 0),
+                "lastHits":   round(ps.get("last_hits")       or 0),
+                "kills":      round(ps.get("kills_in_phase")  or 0),
+                "deaths":     round(ps.get("deaths_in_phase") or 0),
+            }
+            for phase, ps in raw_phase_data.items()
+        }
+
+        # Per-phase narratives using stat breakdown per phase
+        phase_narrative = {
+            phase: generate_phase_narrative(
+                phase=phase,
+                position_score=scores.get(f"{phase}_position_score"),
+                stat_breakdown=stat_breakdown.get(phase, {}),
+            )
+            for phase in ("early_game", "mid_game", "late_game")
+        }
 
         # Partial if any overall score is missing (e.g. benchmark unavailable for a phase)
         is_partial = (
@@ -169,6 +222,13 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
         benchmarkContext=benchmark_ctx,
         hasBenchmarkContext=True,
         isPartial=is_partial,
+        matchNarrative=match_narrative,
+        phaseNarrative=phase_narrative,
+        biggestEdge=biggest_edge,
+        biggestLiability=biggest_liability,
+        improvementSuggestion=improvement_suggestion,
+        performanceProfile=get_performance_archetype(position),
+        phaseStats=phase_stats,
     )
 
 

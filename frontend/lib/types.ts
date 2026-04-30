@@ -47,11 +47,26 @@ export interface PlayerOverview {
   lastRefreshedAt: string | null;
   dataCompleteness: DataCompleteness | null;
   recentMatches: MatchSummary[];
+  // UI v1 — richer content
+  playerNarrative: string | null;
+  recurringStrengths: string[] | null;
+  recurringWeaknesses: string[] | null;
+  consistencyRating: "Consistent" | "Variable" | "Volatile" | null;
+  performanceArchetype: string | null;
 }
 
 export interface PhaseScore {
   positionScore: number | null;
   heroScore: number | null;
+}
+
+export interface PhaseStatEntry {
+  netWorth: number;
+  heroDamage: number;
+  towerDamage: number;
+  lastHits: number;
+  kills: number;
+  deaths: number;
 }
 
 export interface MatchDetail {
@@ -76,4 +91,16 @@ export interface MatchDetail {
   topWeaknesses: string[] | null;
   hasBenchmarkContext: boolean;
   isPartial: boolean;
+  // UI v1 — richer content
+  matchNarrative: string | null;
+  phaseNarrative: { early_game?: string; mid_game?: string; late_game?: string } | null;
+  biggestEdge: string | null;
+  biggestLiability: string | null;
+  improvementSuggestion: string | null;
+  performanceProfile: string | null;
+  phaseStats: {
+    early_game?: PhaseStatEntry;
+    mid_game?: PhaseStatEntry;
+    late_game?: PhaseStatEntry;
+  } | null;
 }

@@ -12,6 +12,10 @@ import RoastCard from "@/components/RoastCard";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+function SectionHeader({ label }: { label: string }) {
+  return <h2 className="text-xs text-gray-500 uppercase tracking-wide">{label}</h2>;
+}
+
 export default function PlayerOverviewPage() {
   const { steamId } = useParams<{ steamId: string }>();
   const router = useRouter();
@@ -51,14 +55,16 @@ export default function PlayerOverviewPage() {
   const steamIdNum = parseInt(steamId, 10);
 
   const trendMap: Record<string, string> = {
-    improving: t.improving,
-    declining: t.declining,
-    stable:    t.stable,
+    improving: t.improving, declining: t.declining, stable: t.stable,
   };
   const trendColor: Record<string, string> = {
-    improving: "text-green-400",
-    declining: "text-red-400",
-    stable:    "text-yellow-400",
+    improving: "text-green-400", declining: "text-red-400", stable: "text-yellow-400",
+  };
+  const consistencyColor: Record<string, string> = {
+    Consistent: "text-green-400", Variable: "text-yellow-400", Volatile: "text-red-400",
+  };
+  const consistencyLabel: Record<string, string> = {
+    Consistent: t.consistentRating, Variable: t.variableRating, Volatile: t.volatileRating,
   };
 
   return (
@@ -86,9 +92,7 @@ export default function PlayerOverviewPage() {
               try {
                 await fetch(`${API}/players/${steamId}/refresh`, { method: "POST" });
                 window.location.reload();
-              } finally {
-                setRefreshing(false);
-              }
+              } finally { setRefreshing(false); }
             }}
           >
             {refreshing ? t.refreshing : t.refreshNow}
@@ -96,7 +100,6 @@ export default function PlayerOverviewPage() {
         </div>
       )}
 
-      {/* Partial data banner */}
       {data.dataCompleteness && data.dataCompleteness.failedMatchCount > 0 && (
         <div className="bg-gray-800/60 border border-gray-700 rounded-lg px-4 py-2 text-gray-400 text-xs">
           {t.partialData(data.dataCompleteness.failedMatchCount)}
@@ -116,11 +119,16 @@ export default function PlayerOverviewPage() {
             {t.rankedMatches(data.recentMatchCount)}
             {data.rank ? ` · ${t.rank} ${data.rank}` : ""}
           </p>
-          {data.recentTrend && (
-            <span className={`text-xs mt-1 inline-block ${trendColor[data.recentTrend] ?? "text-gray-400"}`}>
-              {trendMap[data.recentTrend] ?? data.recentTrend}
-            </span>
-          )}
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
+            {data.performanceArchetype && (
+              <span className="text-xs text-indigo-400">{data.performanceArchetype}</span>
+            )}
+            {data.recentTrend && (
+              <span className={`text-xs ${trendColor[data.recentTrend] ?? "text-gray-400"}`}>
+                {trendMap[data.recentTrend] ?? data.recentTrend}
+              </span>
+            )}
+          </div>
         </div>
         <button
           onClick={() => {
@@ -143,16 +151,22 @@ export default function PlayerOverviewPage() {
         <EmptyState noMatches={t.noMatches} hint={t.noMatchesHint} />
       ) : (
         <>
-          {/* Score summary */}
-          <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
-            <div className="flex justify-around">
-              <ScoreBadge score={data.averageOverallScore}  label={t.overall}  size="lg" />
-              <ScoreBadge score={data.averagePositionScore} label={t.roleAvg} />
-              <ScoreBadge score={data.averageHeroScore}     label={t.heroAvg} />
-            </div>
+          {/* Bucket 1: Current Form */}
+          <div className="flex flex-col gap-3">
+            <SectionHeader label={t.sectionCurrentForm} />
+            <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
+              <div className="flex justify-around">
+                <ScoreBadge score={data.averageOverallScore}  label={t.overall}  size="lg" />
+                <ScoreBadge score={data.averagePositionScore} label={t.roleAvg} />
+                <ScoreBadge score={data.averageHeroScore}     label={t.heroAvg} />
+              </div>
 
-            {(data.strongestPhase || data.weakestPhase) && (
-              <div className="flex gap-3 text-xs justify-center flex-wrap">
+              <div className="flex gap-4 justify-center text-xs flex-wrap">
+                {data.consistencyRating && (
+                  <span className={consistencyColor[data.consistencyRating] ?? "text-gray-400"}>
+                    {t.consistencyLabel}: <span className="font-medium">{consistencyLabel[data.consistencyRating] ?? data.consistencyRating}</span>
+                  </span>
+                )}
                 {data.strongestPhase && (
                   <span className="text-green-400">
                     ▲ {t.strongest}: <span className="font-medium capitalize">{data.strongestPhase}</span>
@@ -164,41 +178,77 @@ export default function PlayerOverviewPage() {
                   </span>
                 )}
               </div>
-            )}
 
-            {data.shortSummary && (
-              <p className="text-gray-400 text-sm text-center leading-snug border-t border-gray-800 pt-3">
-                {data.shortSummary}
-              </p>
-            )}
+              {data.playerNarrative && (
+                <p className="text-gray-400 text-sm leading-relaxed border-t border-gray-800 pt-3">
+                  {data.playerNarrative}
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* AI Roast — main highlight */}
+          {/* AI Roast */}
           <RoastCard steamId={steamIdNum} />
 
-          {/* Best heroes */}
-          {data.bestHeroes && data.bestHeroes.length > 0 && (
-            <div className="bg-gray-900 rounded-xl p-4">
-              <h2 className="text-xs text-gray-500 uppercase tracking-wide mb-3">{t.bestHeroes}</h2>
-              <div className="flex flex-col gap-2">
-                {data.bestHeroes.map((h) => (
-                  <div key={h.heroId} className="flex items-center justify-between">
-                    <span className="text-sm text-white">{h.heroName}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-500">{h.games}g</span>
-                      <span className="text-sm font-medium text-yellow-400 tabular-nums">
-                        {h.avgScore.toFixed(1)}
-                      </span>
+          {/* Bucket 2: Strength Profile */}
+          {(data.recurringStrengths?.length || data.bestHeroes?.length) && (
+            <div className="flex flex-col gap-3">
+              <SectionHeader label={t.sectionStrengthProfile} />
+              <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
+                {data.recurringStrengths && data.recurringStrengths.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">{t.recurringStrengths}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {data.recurringStrengths.map((s) => (
+                        <span key={s} className="text-xs bg-green-900/30 text-green-400 border border-green-800/40 px-2 py-1 rounded-full">
+                          ▲ {s}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                ))}
+                )}
+                {data.bestHeroes && data.bestHeroes.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">{t.bestHeroes}</p>
+                    <div className="flex flex-col gap-2">
+                      {data.bestHeroes.map((h) => (
+                        <div key={h.heroId} className="flex items-center justify-between">
+                          <span className="text-sm text-white">{h.heroName}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-gray-500">{h.games}g</span>
+                            <span className="text-sm font-medium text-yellow-400 tabular-nums">
+                              {h.avgScore.toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Recent matches */}
+          {/* Bucket 3: Recurring Issues */}
+          {data.recurringWeaknesses && data.recurringWeaknesses.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <SectionHeader label={t.sectionRecurringIssues} />
+              <div className="bg-gray-900 rounded-xl p-4">
+                <p className="text-xs text-gray-500 mb-2">{t.recurringWeaknesses}</p>
+                <div className="flex flex-wrap gap-2">
+                  {data.recurringWeaknesses.map((w) => (
+                    <span key={w} className="text-xs bg-red-900/30 text-red-400 border border-red-800/40 px-2 py-1 rounded-full">
+                      ▼ {w}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bucket 4: Recent Matches */}
           <div className="flex flex-col gap-2">
-            <h2 className="text-xs text-gray-500 uppercase tracking-wide">{t.recentMatches}</h2>
+            <SectionHeader label={t.recentMatches} />
             {data.recentMatches.map((m) => (
               <MatchCard key={m.matchId} match={m} steamId={steamIdNum} />
             ))}
@@ -213,9 +263,7 @@ function LoadingSkeleton({ hint }: { hint: string }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="h-4 w-16 bg-gray-800 rounded animate-pulse" />
-      <div className="bg-gray-900/60 border border-gray-800 rounded-lg px-4 py-2 text-gray-500 text-xs">
-        {hint}
-      </div>
+      <div className="bg-gray-900/60 border border-gray-800 rounded-lg px-4 py-2 text-gray-500 text-xs">{hint}</div>
       <div className="flex flex-col gap-5 animate-pulse">
         <div className="bg-gray-900 rounded-xl p-4 flex items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-gray-800" />
@@ -225,14 +273,14 @@ function LoadingSkeleton({ hint }: { hint: string }) {
           </div>
         </div>
         <div className="bg-gray-900 rounded-xl p-6 flex justify-around">
-          {[0, 1, 2].map((i) => (
+          {[0,1,2].map((i) => (
             <div key={i} className="flex flex-col items-center gap-2">
               <div className="h-8 w-14 bg-gray-800 rounded" />
               <div className="h-3 w-10 bg-gray-800 rounded" />
             </div>
           ))}
         </div>
-        {[0, 1, 2, 3, 4].map((i) => <div key={i} className="bg-gray-800 rounded-lg h-14" />)}
+        {[0,1,2,3,4].map((i) => <div key={i} className="bg-gray-800 rounded-lg h-14" />)}
       </div>
     </div>
   );
@@ -243,9 +291,7 @@ function ErrorState({ message, backLabel, onBack }: { message: string; backLabel
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
       <div className="bg-gray-900 rounded-xl p-6 max-w-sm w-full">
         <p className="text-red-400 text-sm mb-4">{message}</p>
-        <button onClick={onBack} className="text-gray-400 hover:text-white text-sm underline">
-          {backLabel}
-        </button>
+        <button onClick={onBack} className="text-gray-400 hover:text-white text-sm underline">{backLabel}</button>
       </div>
     </div>
   );

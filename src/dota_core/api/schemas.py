@@ -76,22 +76,22 @@ class PlayerOverviewResponse(BaseModel):
     rank: Optional[int] = None
     recentMatchCount: int = 0
 
-    # TODO: compute from scored match history once scoring is persisted
     averageOverallScore: Optional[float] = None
     averagePositionScore: Optional[float] = None
     averageHeroScore: Optional[float] = None
 
-    # TODO: compute from phase score averages across recent matches
     strongestPhase: Optional[str] = None
     weakestPhase: Optional[str] = None
-
-    # TODO: derive from hero_performance + scored match data
     bestHeroes: Optional[list[dict]] = None
-
-    # TODO: rolling average direction over last N matches ("improving" | "declining" | "stable")
     recentTrend: Optional[str] = None
-
     shortSummary: Optional[str] = None
+
+    # UI v1 — richer player-level content
+    playerNarrative: Optional[str] = None          # multi-sentence profile synthesis
+    recurringStrengths: Optional[list[str]] = None  # labels appearing 3+ times in recent matches
+    recurringWeaknesses: Optional[list[str]] = None
+    consistencyRating: Optional[str] = None         # "Consistent" | "Variable" | "Volatile"
+    performanceArchetype: Optional[str] = None       # position-based label (e.g. "Space Creator")
 
     # Cache / freshness metadata
     isStale: bool = False
@@ -132,6 +132,15 @@ class MatchDetailResponse(BaseModel):
 
     # True when scoring completed partially (some phase scores or overall scores are None)
     isPartial: bool = False
+
+    # UI v1 — richer match-level content
+    matchNarrative: Optional[str] = None                  # multi-sentence match analysis
+    phaseNarrative: Optional[dict] = None                 # {phase: narrative_text}
+    biggestEdge: Optional[str] = None                     # top strength with context sentence
+    biggestLiability: Optional[str] = None                # top weakness with context sentence
+    improvementSuggestion: Optional[str] = None           # one actionable next step
+    performanceProfile: Optional[str] = None              # position-based archetype label
+    phaseStats: Optional[dict] = None                     # {phase: {stat: value}} for display
 
 
 # ---------------------------------------------------------------------------

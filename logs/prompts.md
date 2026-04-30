@@ -161,3 +161,57 @@ Action: Enforced clean separation:
 
 **Prompt:** `can I check the historical prompt of the project`
 Action: Read `logs/prompts.md` — found it was last updated at Day 2. Updated both `PROJECT_LOG.md` and `logs/prompts.md` with full history through Day 4.
+
+---
+
+## 2026-04-29 — Session 6 (Day 5 — Production Deployment)
+
+**Prompt:** `now I want to push it to production environment, and I will send you a list of prompts, read and provide feedback, let's consolidate into a workable version before moving to execution`
+
+**Prompt:** *(Full production deployment spec — Railway + Vercel, smoke tests, launch blockers, DEPLOYMENT.md)*
+
+**Pre-execution feedback provided:**
+- Flagged SQLite ephemeral filesystem risk on Railway — decided to accept ephemeral for demo (Option B)
+- Flagged Render 30s timeout as launch blocker for slow Stratz fetches — recommended Railway instead
+- Flagged CORS hardcoded to localhost — needs env var before deploy
+- Flagged `PYTHONPATH=src` must be in production start command
+- Proposed consolidated plan: Railway (backend) + Vercel (frontend)
+
+**Phase B — Production config changes:**
+- `app/main.py` — CORS `allow_origins` now reads from `ALLOWED_ORIGINS` env var
+- `Procfile` — `PYTHONPATH=src uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- `railway.toml` — healthcheck, restart policy
+- `.env.example` — updated with all production env vars
+- `DEPLOYMENT.md` — full deploy instructions, env vars, demo walkthrough, known limitations
+
+**Phase C — Railway backend deploy:**
+- Connected GitHub repo to Railway, set env vars (`STRATZ_TOKEN`, `OPENAI_API_KEY`, `ALLOWED_ORIGINS`)
+- Backend live: `https://dota2-roast-generator.up.railway.app`
+
+**Phase D — Vercel frontend deploy:**
+
+Issues encountered and fixed:
+1. Vercel env var KEY field: user confused by UI — clarified to type `NEXT_PUBLIC_API_URL` as key
+2. "No Output Directory named public" error — Vercel reading repo root not `frontend/` subdirectory
+   - Added `vercel.json` at repo root (failed: `npm install` exited with 1, Node 24 lockfile incompatible with Vercel's Node 18)
+   - Fix: moved `vercel.json` inside `frontend/`, added `.node-version` pinning Node 20, instructed user to set Root Directory to `frontend` in Vercel settings
+- Frontend live: `https://dota2-roast-generator.vercel.app`
+
+**Phase E — Smoke tests and launch blockers:**
+
+Smoke test results:
+- `GET /health` ✅
+- `GET /players/{id}/overview` ✅ — SoFate, 20 matches, scores returned
+- `GET /matches/{id}` ✅ — Legion Commander, phase breakdown, strengths/weaknesses
+- `GET /players/search` ⚠️ — returns empty (Stratz search non-blocking)
+- CORS ✅ — after updating `ALLOWED_ORIGINS` in Railway to Vercel URL
+- AI roast ✅ — after adding `OPENAI_API_KEY` to Railway and re-seeding DB via overview fetch
+  - Generated: title "三号位慈善家", tone "high", 1374 chars, punchline "你开的是团，队友开的是追悼会。"
+
+Launch blockers fixed:
+1. CORS rejected Vercel origin → updated `ALLOWED_ORIGINS` in Railway
+2. `OPENAI_API_KEY` missing from Railway → added to Variables
+3. Empty roast after DB reset → triggered overview fetch first to re-seed SQLite
+
+**Prompt:** `update and refresh the project log and prompt history`
+Action: Updated `PROJECT_LOG.md` with live URLs, Day 5 section, new TODOs. Updated `logs/prompts.md` with full Session 6 history.

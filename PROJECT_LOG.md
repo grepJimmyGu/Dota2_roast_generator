@@ -11,6 +11,17 @@ Each match is broken into three phases (lane 0–12 min, mid 13–40 min, late 4
 
 ---
 
+## Live Deployment
+
+| Service | URL |
+|---|---|
+| Frontend | https://dota2-roast-generator.vercel.app |
+| Backend | https://dota2-roast-generator.up.railway.app |
+
+Platform: **Vercel** (Next.js frontend) + **Railway** (FastAPI backend)
+
+---
+
 ## Architecture
 
 | Layer | Location | Purpose |
@@ -95,6 +106,8 @@ GET /players/{steam_id}/roast
 - [x] Populate `strongestPhase` / `weakestPhase` — done Day 2
 - [x] `deaths_in_phase` scoring — done Day 3
 - [x] Roast tag system — done Day 4
+- [x] Production deployment — done Day 5 (Vercel + Railway)
+- [ ] Add Railway persistent volume for SQLite (currently ephemeral — DB resets on redeploy)
 - [ ] Move `POST /refresh` to async background worker
 - [ ] Replace `lru_cache` benchmark cache with Redis for multi-worker deployments
 - [ ] Replace `hero_name()` live API call with a static asset bundle
@@ -157,6 +170,39 @@ Beyond spec (user requests):
 | `gameCloseness` surfaced | Shown as "Even game / Moderately one-sided / Heavily one-sided" |
 | First-load timing | Loading skeleton shows "30–60s for new players" notice |
 | Demo Steam ID | Clickable example on landing page |
+
+---
+
+## Day 5 — Production Deployment (2026-04-29)
+
+| Step | Outcome |
+|---|---|
+| Backend on Railway | ✅ `https://dota2-roast-generator.up.railway.app` |
+| Frontend on Vercel | ✅ `https://dota2-roast-generator.vercel.app` |
+| CORS configured | ✅ `ALLOWED_ORIGINS` env var, Railway → Vercel origin |
+| Health check | ✅ `/health` returns `{"status":"ok"}` |
+| Player overview | ✅ Scores, phases, summary, 20 matches |
+| Match detail | ✅ Phase breakdown, strengths/weaknesses |
+| AI roast | ✅ OpenAI `gpt-5.5` generating in production |
+| End-to-end flow | ✅ Steam ID → overview → match → roast fully working |
+
+Deployment config added:
+- `Procfile` — `PYTHONPATH=src uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- `railway.toml` — health check path, restart policy
+- `frontend/vercel.json` — framework declaration
+- `frontend/.node-version` — pins Node 20 for Vercel compatibility
+- `DEPLOYMENT.md` — full deploy instructions, env vars, demo walkthrough
+
+Launch blockers encountered and fixed:
+- CORS: `allow_origins` hardcoded to localhost → moved to `ALLOWED_ORIGINS` env var
+- Vercel build: Root Directory not set → added `frontend/vercel.json`, pinned Node 20
+- OpenAI `AuthenticationError`: `OPENAI_API_KEY` missing from Railway → added to Variables
+- Empty roast after Railway redeploy: ephemeral SQLite reset → hit overview first to re-seed DB
+
+Known production limitations:
+- SQLite is ephemeral — DB resets on Railway redeploy (data re-fetches from Stratz automatically)
+- Player name search returns empty in production (Stratz search schema behaviour)
+- `POST /refresh` (100 matches) may be slow for long Stratz fetches
 
 ---
 
@@ -228,3 +274,13 @@ Tests: 45 total (31 tag system + 14 critique pipeline), all passing.
 - Signal separation enforced: scoring labels ↔ roast tags are now independent.
 - `roast_tags` field added to `PlayerMatchStats`; critique pipeline uses only roast tags.
 - All 45 tests passing.
+- GitHub repo created: https://github.com/grepJimmyGu/Dota2_roast_generator
+- README.md added with full project overview, setup guide, and architecture docs.
+- Day 5: Production deployment sprint.
+  - Backend deployed to Railway (`dota2-roast-generator.up.railway.app`)
+  - Frontend deployed to Vercel (`dota2-roast-generator.vercel.app`)
+  - CORS configured via `ALLOWED_ORIGINS` env var
+  - `Procfile` + `railway.toml` added for Railway deployment
+  - `DEPLOYMENT.md` written with full deploy instructions and demo walkthrough
+  - All production smoke tests passed: health, overview, match detail, AI roast
+  - AI roast verified working end-to-end in production (title: 三号位慈善家, tone: high)

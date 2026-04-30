@@ -15,6 +15,10 @@ from dota_core.domain.heroes import hero_name as _prewarm_heroes
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
 _ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
+# Regex pattern for Vercel preview deployments (all *.vercel.app subdomains).
+# Covers branch preview URLs automatically without manual ALLOWED_ORIGINS updates.
+_ALLOWED_ORIGIN_REGEX = r"https://.*\.vercel\.app"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s %(message)s",
@@ -44,6 +48,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=_ALLOWED_ORIGIN_REGEX,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

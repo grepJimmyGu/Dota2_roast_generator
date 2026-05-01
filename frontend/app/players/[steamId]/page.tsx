@@ -21,7 +21,7 @@ function SectionHeader({ label }: { label: string }) {
 export default function PlayerOverviewPage() {
   const { steamId } = useParams<{ steamId: string }>();
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const [data, setData]             = useState<PlayerOverview | null>(null);
   const [loading, setLoading]       = useState(true);
@@ -39,7 +39,7 @@ export default function PlayerOverviewPage() {
     if (!steamId) return;
     setLoading(true);
     setError(null);
-    fetch(`${API}/players/${steamId}/overview`)
+    fetch(`${API}/players/${steamId}/overview?lang=${locale}`)
       .then(async (res) => {
         if (res.status === 404) throw new Error("Player not found on Stratz.");
         if (!res.ok) throw new Error(`Server error (${res.status}). Try again later.`);

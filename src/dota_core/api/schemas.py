@@ -22,6 +22,8 @@ class ScoreContextSchema(BaseModel):
     benchmarkAvg: float = 50.0   # always 50 by construction of the z-score formula
     percentile:   float           # 0–100
     label:        str             # "Top 10%", "Above average", etc.
+    bracket:      Optional[str] = None   # e.g. "CRUSADER_ARCHON"
+    bracketLabel: Optional[str] = None   # e.g. "Crusader / Archon"
 
 
 class AnalysisEntrySchema(BaseModel):

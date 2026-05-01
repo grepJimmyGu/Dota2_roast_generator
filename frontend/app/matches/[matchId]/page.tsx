@@ -60,7 +60,7 @@ export default function MatchDetailPage() {
       setLoading(false);
       return;
     }
-    fetch(`${API}/matches/${matchId}?steam_id=${steamId}`)
+    fetch(`${API}/matches/${matchId}?steam_id=${steamId}&lang=${locale}`)
       .then(async (res) => {
         if (res.status === 404) throw new Error("Match not found.");
         if (!res.ok) throw new Error(`Server error (${res.status}). Try again later.`);

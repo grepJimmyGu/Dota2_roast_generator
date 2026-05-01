@@ -54,7 +54,7 @@ _SCORE_LIVE_N = 10
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_player_overview(steam_id: int, match_count: int = 20) -> PlayerOverviewResponse:
+def get_player_overview(steam_id: int, match_count: int = 20, lang: str = "en") -> PlayerOverviewResponse:
     """
     Return a player overview, using the cache when possible.
 
@@ -71,13 +71,13 @@ def get_player_overview(steam_id: int, match_count: int = 20) -> PlayerOverviewR
 
         if player is None:
             _log.info(f"[overview] steam_id={steam_id} cache_hit=False")
-            result = _do_live_refresh(steam_id, match_count, db)
+            result = _do_live_refresh(steam_id, match_count, db, lang=lang)
             _log.info(f"[overview] steam_id={steam_id} complete duration_ms={_ms(t0)}")
             return result
 
         is_stale = not _is_fresh(player.last_refreshed_at)
         _log.info(f"[overview] steam_id={steam_id} cache_hit=True is_stale={is_stale}")
-        result = _build_cached_overview(steam_id, player, match_count, is_stale=is_stale, db=db)
+        result = _build_cached_overview(steam_id, player, match_count, is_stale=is_stale, db=db, lang=lang)
         _log.info(f"[overview] steam_id={steam_id} complete duration_ms={_ms(t0)}")
         return result
 
@@ -106,6 +106,7 @@ def _build_cached_overview(
     match_count: int,
     is_stale: bool,
     db: Session,
+    lang: str = "en",
 ) -> PlayerOverviewResponse:
     mr = MatchRepository(db)
     sr = ScoreRepository(db)
@@ -147,7 +148,7 @@ def _build_cached_overview(
     score_rows = list(scores_by_match.values())
     strongest_phase, weakest_phase = _compute_player_phase_labels(score_rows)
     recent_trend = _compute_recent_trend(scored)
-    archetype    = _compute_archetype(matches)
+    archetype    = _compute_archetype(matches, lang)
     recurring_s, recurring_w = compute_recurring_patterns(score_rows)
     consistency  = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
     short_summary = generate_player_summary(
@@ -160,9 +161,10 @@ def _build_cached_overview(
         recurring_strengths=recurring_s, recurring_weaknesses=recurring_w,
         consistency_rating=consistency, recent_trend=recent_trend,
         average_overall_score=agg.get("averageOverallScore"), match_count=len(matches),
+        lang=lang,
     )
     match_records = _build_pattern_records(matches, scores_by_match)
-    recurring_patterns = generate_recurring_pattern_entries(match_records)
+    recurring_patterns = generate_recurring_pattern_entries(match_records, lang=lang)
     avg_score = agg.get("averageOverallScore")
 
     return PlayerOverviewResponse(
@@ -182,7 +184,7 @@ def _build_cached_overview(
         playerNarrative=player_narrative,
         consistencyRating=consistency,
         performanceArchetype=archetype,
-        scoreContext=build_score_context(avg_score) if avg_score is not None else None,
+        scoreContext=build_score_context(avg_score, lang=lang) if avg_score is not None else None,
         recurringPatterns=recurring_patterns or None,
         isStale=is_stale,
         refreshRecommended=is_stale,
@@ -196,7 +198,7 @@ def _build_cached_overview(
 # Live fetch path (Case C + POST /refresh)
 # ---------------------------------------------------------------------------
 
-def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOverviewResponse:
+def _do_live_refresh(steam_id: int, match_count: int, db: Session, lang: str = "en") -> PlayerOverviewResponse:
     t0 = time.perf_counter()
     pr = PlayerRepository(db)
     mr = MatchRepository(db)
@@ -320,7 +322,7 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
     scores_by_match_all = {s.match_id: s for s in all_scores}
     strongest_phase, weakest_phase = _compute_player_phase_labels(all_scores)
     recent_trend = _compute_recent_trend(scored)
-    archetype    = _compute_archetype(matches_orm)
+    archetype    = _compute_archetype(matches_orm, lang)
     recurring_s, recurring_w = compute_recurring_patterns(all_scores)
     consistency  = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
     short_summary = generate_player_summary(
@@ -333,9 +335,10 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         recurring_strengths=recurring_s, recurring_weaknesses=recurring_w,
         consistency_rating=consistency, recent_trend=recent_trend,
         average_overall_score=agg.get("averageOverallScore"), match_count=len(df),
+        lang=lang,
     )
     match_records = _build_pattern_records(matches_orm, scores_by_match_all)
-    recurring_patterns = generate_recurring_pattern_entries(match_records)
+    recurring_patterns = generate_recurring_pattern_entries(match_records, lang=lang)
     avg_score = agg.get("averageOverallScore")
 
     return PlayerOverviewResponse(
@@ -355,7 +358,7 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         playerNarrative=player_narrative,
         consistencyRating=consistency,
         performanceArchetype=archetype,
-        scoreContext=build_score_context(avg_score) if avg_score is not None else None,
+        scoreContext=build_score_context(avg_score, lang=lang) if avg_score is not None else None,
         recurringPatterns=recurring_patterns or None,
         isStale=False,
         refreshRecommended=False,
@@ -553,14 +556,14 @@ def _build_pattern_records(matches, scores_by_match: dict) -> list[dict]:
     return records
 
 
-def _compute_archetype(matches) -> str | None:
+def _compute_archetype(matches, lang: str = "en") -> str | None:
     """Return the position-based archetype label for the most-played position."""
     from collections import Counter
     counts = Counter(m.position for m in matches if m.position)
     if not counts:
         return None
     dominant = counts.most_common(1)[0][0]
-    return get_performance_archetype(dominant)
+    return get_performance_archetype(dominant, lang)
 
 
 def _compute_player_phase_labels(score_rows) -> tuple[str | None, str | None]:

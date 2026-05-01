@@ -43,7 +43,7 @@ from app.services.scoring_utils import (
 from app.errors import MatchNotFoundError, StratzAPIError
 
 
-def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
+def get_match_analysis(match_id: int, steam_id: int, lang: str = "en") -> MatchDetailResponse:
     """
     Fetch and score a single match for a player.
     Checks the detail cache (DB) before calling Stratz.
@@ -141,10 +141,11 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
             position=position,
             is_partial=False,
             scored_stat_count=scored_stat_count,
+            lang=lang,
         )
-        biggest_edge      = generate_biggest_edge(strengths, strongest_phase, stat_breakdown)
-        biggest_liability = generate_biggest_liability(weaknesses, weakest_phase)
-        improvement_suggestion = generate_improvement_suggestion(weakest_phase, weaknesses, position)
+        biggest_edge      = generate_biggest_edge(strengths, strongest_phase, stat_breakdown, lang)
+        biggest_liability = generate_biggest_liability(weaknesses, weakest_phase, lang)
+        improvement_suggestion = generate_improvement_suggestion(weakest_phase, weaknesses, position, lang)
 
         # Per-phase stats for display
         raw_phase_data = extract_phase_stats(detail, duration_sec, hero_id=hero_id, position=position)
@@ -169,14 +170,15 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
             weakest_phase=weakest_phase,
             is_partial=False,
             scored_stat_count=scored_stat_count,
+            lang=lang,
         )
 
-        # Per-phase narratives using stat breakdown per phase
         phase_narrative = {
             phase: generate_phase_narrative(
                 phase=phase,
                 position_score=scores.get(f"{phase}_position_score"),
                 stat_breakdown=stat_breakdown.get(phase, {}),
+                lang=lang,
             )
             for phase in ("early_game", "mid_game", "late_game")
         }
@@ -240,10 +242,10 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
         biggestEdge=biggest_edge,
         biggestLiability=biggest_liability,
         improvementSuggestion=improvement_suggestion,
-        performanceProfile=get_performance_archetype(position),
+        performanceProfile=get_performance_archetype(position, lang),
         phaseStats=phase_stats,
-        scoreContext=build_score_context(scores["overall_position_score"]) if scores.get("overall_position_score") is not None else None,
-        heroScoreContext=build_score_context(scores["overall_hero_score"]) if scores.get("overall_hero_score") is not None else None,
+        scoreContext=build_score_context(scores["overall_position_score"], bracket=rank_to_bracket(average_rank), lang=lang) if scores.get("overall_position_score") is not None else None,
+        heroScoreContext=build_score_context(scores["overall_hero_score"], bracket=rank_to_bracket(average_rank), lang=lang) if scores.get("overall_hero_score") is not None else None,
         matchAnalysis=match_analysis,
     )
 

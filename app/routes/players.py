@@ -18,9 +18,9 @@ def player_search(q: str = Query(..., min_length=2, description="Player name to 
 
 
 @router.get("/{steam_id}/overview", response_model=PlayerOverviewResponse)
-def player_overview(steam_id: int):
+def player_overview(steam_id: int, lang: str = Query("en", description="Language: en or zh")):
     try:
-        return get_player_overview(steam_id)
+        return get_player_overview(steam_id, lang=lang)
     except PlayerNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except StratzAPIError as exc:

@@ -33,6 +33,8 @@ export interface ScoreContext {
   benchmarkAvg: number;
   percentile: number;
   label: string;
+  bracket: string | null;
+  bracketLabel: string | null;
 }
 
 export interface WinLossExample {

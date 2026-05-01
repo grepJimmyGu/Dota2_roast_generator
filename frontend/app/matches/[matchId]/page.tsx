@@ -68,7 +68,7 @@ export default function MatchDetailPage() {
       })
       .then((json) => { setData(json); setLoading(false); })
       .catch((err) => { setError(err.message); setLoading(false); });
-  }, [matchId, steamId]);
+  }, [matchId, steamId, locale]);
 
   if (loading) return <LoadingSkeleton />;
   if (error)   return <ErrorState message={error} backLabel={t.goBack} onBack={() => router.back()} />;

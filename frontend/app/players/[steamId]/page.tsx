@@ -47,7 +47,7 @@ export default function PlayerOverviewPage() {
       })
       .then((json) => { setData(json); setLoading(false); })
       .catch((err) => { setError(err.message); setLoading(false); });
-  }, [steamId]);
+  }, [steamId, locale]);
 
   if (loading) return <LoadingSkeleton hint={t.firstLoadHint} />;
   if (error)   return <ErrorState message={error} backLabel={t.backToSearchLink} onBack={() => router.push("/")} />;

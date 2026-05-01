@@ -138,6 +138,18 @@ export const translations: Record<Locale, any> = {
     variableRating: "Variable",
     volatileRating: "Volatile",
 
+    // UI v2 — score context + deep analysis
+    benchmarkAvgLabel: "avg",
+    percentileOf: "percentile",
+    sectionAnalysis: "Match Analysis",
+    whyItMatters: "Why it matters",
+    takeaway: "Takeaway",
+    winExample: "Win example",
+    lossExample: "Loss example",
+    winsVsLosses: "In wins vs losses",
+    appearsIn: (n: number, total: number) => `In ${n} of last ${total} matches`,
+    noPatterns: "Not enough matches to identify recurring patterns yet.",
+
     // Position labels
     positions: {
       1: "Carry",
@@ -255,6 +267,17 @@ export const translations: Record<Locale, any> = {
     consistentRating: "稳定",
     variableRating: "波动",
     volatileRating: "不稳定",
+
+    benchmarkAvgLabel: "均值",
+    percentileOf: "百分位",
+    sectionAnalysis: "比赛分析",
+    whyItMatters: "为什么重要",
+    takeaway: "改进方向",
+    winExample: "胜场示例",
+    lossExample: "败场示例",
+    winsVsLosses: "胜负对比",
+    appearsIn: (n: number, total: number) => `近${total}场中出现${n}次`,
+    noPatterns: "近期比赛场次不足，暂无规律分析。",
 
     positions: {
       1: "下路核心",

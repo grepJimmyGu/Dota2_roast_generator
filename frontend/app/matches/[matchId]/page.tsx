@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { MatchDetail, PhaseStatEntry } from "@/lib/types";
+import { MatchDetail, PhaseStatEntry, AnalysisEntry } from "@/lib/types";
 import ScoreBadge from "@/components/ScoreBadge";
 import PhaseBar from "@/components/PhaseBar";
+import PercentileBar from "@/components/PercentileBar";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { STAT_LABEL, Locale } from "@/lib/i18n";
 
@@ -129,22 +130,21 @@ export default function MatchDetailPage() {
         <SectionHeader label={t.sectionPerformance} />
         <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
           <div className="flex justify-around">
-            <div className="flex flex-col items-center gap-0.5">
-              <ScoreBadge score={overallScore} label={t.overall} size="lg" />
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
-              <ScoreBadge score={data.overallPositionScore} label={t.roleLabel} />
-              <span className="text-gray-600 text-xs text-center max-w-[80px] leading-tight">
-                {t.benchmarkRoleExplain}
-              </span>
-            </div>
-            <div className="flex flex-col items-center gap-0.5">
-              <ScoreBadge score={data.overallHeroScore} label={t.heroLabel} />
-              <span className="text-gray-600 text-xs text-center max-w-[80px] leading-tight">
-                {t.benchmarkHeroExplain}
-              </span>
-            </div>
+            <ScoreBadge score={overallScore} label={t.overall} size="lg" />
+            <ScoreBadge score={data.overallPositionScore} label={t.roleLabel} />
+            <ScoreBadge score={data.overallHeroScore}     label={t.heroLabel} />
           </div>
+
+          {/* Percentile bars */}
+          {data.scoreContext && (
+            <div className="flex flex-col gap-3 border-t border-gray-800 pt-3">
+              <PercentileBar ctx={data.scoreContext} label={`${t.roleLabel} — ${t.benchmarkRoleExplain}`} />
+              {data.heroScoreContext && (
+                <PercentileBar ctx={data.heroScoreContext} label={`${t.heroLabel} — ${t.benchmarkHeroExplain}`} />
+              )}
+              <p className="text-gray-700 text-xs">{t.heuristicNote}</p>
+            </div>
+          )}
 
           {data.gameCloseness !== null && data.gameCloseness !== undefined && (
             <div className="flex justify-center">
@@ -168,10 +168,6 @@ export default function MatchDetailPage() {
               {data.matchNarrative}
             </p>
           )}
-
-          {data.hasBenchmarkContext && (
-            <p className="text-gray-600 text-xs">{t.heuristicNote}</p>
-          )}
         </div>
       </div>
 
@@ -190,19 +186,15 @@ export default function MatchDetailPage() {
       </div>
 
       {/* Bucket 2: What Went Well */}
-      {(data.biggestEdge || (data.topStrengths && data.topStrengths.length > 0)) && (
+      {(data.matchAnalysis?.wentWell?.length || data.topStrengths?.length) && (
         <div className="flex flex-col gap-3">
           <SectionHeader label={t.sectionWentWell} />
-          <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-3">
-            {data.biggestEdge && (
-              <div>
-                <p className="text-xs text-gray-500 mb-1">{t.biggestEdge}</p>
-                <p className="text-green-400 text-sm">{data.biggestEdge}</p>
-              </div>
-            )}
-            {data.topStrengths && data.topStrengths.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-500 mb-1.5">{t.strengths}</p>
+          <div className="flex flex-col gap-3">
+            {(data.matchAnalysis?.wentWell ?? []).map((entry, i) => (
+              <AnalysisCard key={i} entry={entry} accent="green" t={t} />
+            ))}
+            {!data.matchAnalysis?.wentWell?.length && data.topStrengths?.length && (
+              <div className="bg-gray-900 rounded-xl p-4">
                 <ul className="flex flex-col gap-1.5">
                   {data.topStrengths.map((s) => (
                     <li key={s} className="text-green-400 text-sm flex items-center gap-1.5">
@@ -217,19 +209,15 @@ export default function MatchDetailPage() {
       )}
 
       {/* Bucket 3: What Hurt Most */}
-      {(data.biggestLiability || (data.topWeaknesses && data.topWeaknesses.length > 0)) && (
+      {(data.matchAnalysis?.hurtMost?.length || data.topWeaknesses?.length) && (
         <div className="flex flex-col gap-3">
           <SectionHeader label={t.sectionHurtMost} />
-          <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-3">
-            {data.biggestLiability && (
-              <div>
-                <p className="text-xs text-gray-500 mb-1">{t.biggestLiability}</p>
-                <p className="text-red-400 text-sm">{data.biggestLiability}</p>
-              </div>
-            )}
-            {data.topWeaknesses && data.topWeaknesses.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-500 mb-1.5">{t.weaknesses}</p>
+          <div className="flex flex-col gap-3">
+            {(data.matchAnalysis?.hurtMost ?? []).map((entry, i) => (
+              <AnalysisCard key={i} entry={entry} accent="red" t={t} />
+            ))}
+            {!data.matchAnalysis?.hurtMost?.length && data.topWeaknesses?.length && (
+              <div className="bg-gray-900 rounded-xl p-4">
                 <ul className="flex flex-col gap-1.5">
                   {data.topWeaknesses.map((w) => (
                     <li key={w} className="text-red-400 text-sm flex items-center gap-1.5">
@@ -244,15 +232,53 @@ export default function MatchDetailPage() {
       )}
 
       {/* Bucket 4: What to Work On */}
-      {data.improvementSuggestion && (
+      {(data.matchAnalysis?.workOn?.length || data.improvementSuggestion) && (
         <div className="flex flex-col gap-3">
           <SectionHeader label={t.sectionWorkOn} />
-          <div className="bg-gray-900 rounded-xl p-4">
-            <p className="text-xs text-gray-500 mb-1">{t.improvementFocus}</p>
-            <p className="text-indigo-300 text-sm leading-relaxed">{data.improvementSuggestion}</p>
+          <div className="flex flex-col gap-3">
+            {(data.matchAnalysis?.workOn ?? []).map((entry, i) => (
+              <AnalysisCard key={i} entry={entry} accent="indigo" t={t} />
+            ))}
+            {!data.matchAnalysis?.workOn?.length && data.improvementSuggestion && (
+              <div className="bg-gray-900 rounded-xl p-4">
+                <p className="text-indigo-300 text-sm leading-relaxed">{data.improvementSuggestion}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AnalysisCard({
+  entry, accent, t,
+}: {
+  entry: AnalysisEntry;
+  accent: "green" | "red" | "indigo";
+  t: ReturnType<typeof useLanguage>["t"];
+}) {
+  const border = { green: "border-green-800/30", red: "border-red-800/30", indigo: "border-indigo-800/30" }[accent];
+  const titleColor = { green: "text-green-400", red: "text-red-400", indigo: "text-indigo-400" }[accent];
+
+  return (
+    <div className={`bg-gray-900 rounded-xl p-4 border ${border} flex flex-col gap-2`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={`text-sm font-medium ${titleColor}`}>{entry.title}</span>
+        {entry.phase && (
+          <span className="text-xs text-gray-600 flex-shrink-0 capitalize">{entry.phase}</span>
+        )}
+      </div>
+      <p className="text-gray-300 text-sm leading-relaxed">{entry.detail}</p>
+      <div className="flex flex-col gap-1 pt-1 border-t border-gray-800">
+        <p className="text-xs text-gray-500">
+          <span className="text-gray-600">{t.whyItMatters}: </span>{entry.whyItMatters}
+        </p>
+        <p className="text-xs text-gray-500">
+          <span className="text-gray-600">{t.takeaway}: </span>
+          <span className={titleColor}>{entry.takeaway}</span>
+        </p>
+      </div>
     </div>
   );
 }

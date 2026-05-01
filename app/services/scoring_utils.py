@@ -2,6 +2,7 @@
 Shared scoring utilities used by both player_service and match_service.
 """
 from __future__ import annotations
+import math
 import statistics
 from collections import Counter, defaultdict
 
@@ -463,3 +464,336 @@ def generate_player_summary(
         parts.append(trend_clause)
 
     return " — ".join(parts) + "."
+
+
+# ---------------------------------------------------------------------------
+# UI v2 — score distribution context
+# ---------------------------------------------------------------------------
+
+# Score follows approximately N(50, 16.67) since score = (z + 3) / 6 * 100
+# and z ~ N(0, 1). The normal approximation is a reasonable proxy for MVP;
+# true distributions vary slightly by position, hero, and stat coverage.
+# TODO: replace with empirically sampled distributions when score history is sufficient.
+_SCORE_MU    = 50.0
+_SCORE_SIGMA = 100.0 / 6.0   # ≈ 16.67
+
+
+def compute_score_percentile(score: float) -> float:
+    """Return the approximate percentile (0–100) for a score using normal CDF."""
+    z = (score - _SCORE_MU) / (_SCORE_SIGMA * math.sqrt(2))
+    return round((1.0 + math.erf(z)) / 2.0 * 100, 1)
+
+
+def _percentile_label(percentile: float) -> str:
+    if percentile >= 90: return "Top 10%"
+    if percentile >= 80: return "Top 20%"
+    if percentile >= 70: return "Top 30%"
+    if percentile >= 60: return "Above average"
+    if percentile >= 40: return "Around average"
+    if percentile >= 20: return "Below average"
+    return "Bottom 20%"
+
+
+def build_score_context(score: float) -> dict:
+    """Return a ScoreContextSchema-compatible dict for a score value."""
+    percentile = compute_score_percentile(score)
+    return {
+        "score":        round(score, 1),
+        "benchmarkAvg": _SCORE_MU,
+        "percentile":   percentile,
+        "label":        _percentile_label(percentile),
+    }
+
+
+# ---------------------------------------------------------------------------
+# UI v2 — deeper match analysis entries
+# ---------------------------------------------------------------------------
+
+# Implication phrases per stat, direction
+_STAT_IMPLICATION: dict[str, dict[str, str]] = {
+    "net_worth_gain": {
+        "positive": "building a resource advantage ahead of role benchmarks",
+        "negative": "falling behind on the resource curve expected for this role",
+    },
+    "damage_dealt": {
+        "positive": "contributing above-benchmark fight output and pressure",
+        "negative": "below-benchmark hero damage reduced fight and carry impact",
+    },
+    "tower_damage": {
+        "positive": "converting advantages into objective and map pressure",
+        "negative": "failing to translate advantages into tower and map control",
+    },
+    "last_hits": {
+        "positive": "maintaining strong CS efficiency and income parity",
+        "negative": "falling behind on CS — a key income metric for this role",
+    },
+    "kills_in_phase": {
+        "positive": "generating kill pressure and tempo for the team",
+        "negative": "limited kill contribution where active pressure was expected",
+    },
+    "assists_in_phase": {
+        "positive": "high fight participation and consistent teamwork contribution",
+        "negative": "low fight participation — a key metric for this role",
+    },
+    "vacancy_time": {
+        "positive": "minimal idle time — staying active and productive on the map",
+        "negative": "extended idle periods reduced effective farm and map presence",
+    },
+    "aggression": {
+        "positive": "sustained harassment pressure maintained fight tempo",
+        "negative": "limited harassment reduced the offlane's space-creation impact",
+    },
+    "deaths_in_phase": {
+        "positive": "strong survival kept momentum and resource flow intact",
+        "negative": "repeated deaths disrupted tempo and created resource gaps for the enemy",
+    },
+}
+
+_STAT_WHY_MATTERS: dict[str, str] = {
+    "net_worth_gain":   "Farm efficiency directly determines power spikes and item timing.",
+    "damage_dealt":     "Hero damage is the primary indicator of fight impact.",
+    "tower_damage":     "Objective pressure is how individual performance converts into team wins.",
+    "last_hits":        "CS rate determines resource income and item timing throughout the game.",
+    "kills_in_phase":   "Kill pressure creates gold leads and timing windows for the team.",
+    "assists_in_phase": "High assist rate indicates effective teamfight participation.",
+    "vacancy_time":     "Active map presence maximizes efficiency and reduces wasted potential.",
+    "aggression":       "Offlane harassment determines how much space the core can farm.",
+    "deaths_in_phase":  "Death count impacts both gold loss and team fight availability.",
+}
+
+# Map stat_key → phaseStats camelCase key (for concrete value lookup)
+_STAT_TO_PHASE_KEY: dict[str, str] = {
+    "net_worth_gain":   "netWorth",
+    "damage_dealt":     "heroDamage",
+    "tower_damage":     "towerDamage",
+    "last_hits":        "lastHits",
+    "kills_in_phase":   "kills",
+    "deaths_in_phase":  "deaths",
+}
+
+
+def _z_magnitude(z: float, positive: bool) -> str:
+    az = abs(z)
+    if az > 1.5:
+        return "significantly above benchmark" if positive else "significantly below benchmark"
+    if az > 0.8:
+        return "clearly above benchmark" if positive else "clearly below benchmark"
+    return "above benchmark" if positive else "below benchmark"
+
+
+def _make_went_well_entry(phase: str, stat: str, z: float, phase_stats: dict | None) -> dict:
+    label        = STAT_LABELS.get(stat, stat)
+    phase_label  = PHASE_DISPLAY.get(phase, phase)
+    magnitude    = _z_magnitude(z, True)
+    implication  = _STAT_IMPLICATION.get(stat, {}).get("positive", "outperforming the role benchmark")
+    why          = _STAT_WHY_MATTERS.get(stat, "This metric reflects role effectiveness.")
+
+    # Pull concrete value if available
+    val_key  = _STAT_TO_PHASE_KEY.get(stat)
+    val      = (phase_stats or {}).get(phase, {}).get(val_key) if val_key else None
+    val_str  = f" ({val:,})" if val else ""
+
+    detail = (
+        f"Your {label}{val_str} in {phase_label} was {magnitude} — {implication}. "
+        f"This was one of the clearer positive signals in this phase relative to your role and bracket."
+    )
+    takeaway = f"This is a reliable strength — continue prioritising {label.lower()} in {phase_label}."
+
+    return {"title": f"Strong {label}", "detail": detail, "phase": phase_label,
+            "whyItMatters": why, "takeaway": takeaway}
+
+
+def _make_hurt_most_entry(phase: str, stat: str, z: float, phase_stats: dict | None) -> dict:
+    label       = STAT_LABELS.get(stat, stat)
+    phase_label = PHASE_DISPLAY.get(phase, phase)
+    magnitude   = _z_magnitude(z, False)
+    implication = _STAT_IMPLICATION.get(stat, {}).get("negative", "falling short of the role benchmark")
+    why         = _STAT_WHY_MATTERS.get(stat, "This metric reflects role effectiveness.")
+
+    val_key = _STAT_TO_PHASE_KEY.get(stat)
+    val     = (phase_stats or {}).get(phase, {}).get(val_key) if val_key else None
+    val_str = f" ({val:,})" if val else ""
+
+    detail = (
+        f"Your {label}{val_str} in {phase_label} was {magnitude} — {implication}. "
+        f"This was one of the clearest drags on performance relative to your role benchmark in this phase."
+    )
+    takeaway = f"Address {label.lower()} in {phase_label} — it's your most consistent gap in this area."
+
+    return {"title": f"Weak {label}", "detail": detail, "phase": phase_label,
+            "whyItMatters": why, "takeaway": takeaway}
+
+
+def _make_work_on_entry(phase: str, stat: str, z: float, position: int,
+                         weakest_phase: str | None) -> dict:
+    label       = STAT_LABELS.get(stat, stat)
+    phase_label = PHASE_DISPLAY.get(phase, phase)
+    suggestion  = generate_improvement_suggestion(weakest_phase, [label], position) or (
+        f"Focus on {label.lower()} in {phase_label} — this is the highest-leverage gap in this game."
+    )
+    why = _STAT_WHY_MATTERS.get(stat, "This metric reflects role effectiveness.")
+
+    detail = (
+        f"Your highest-leverage improvement in this game is {label.lower()} in {phase_label}, "
+        f"which fell {_z_magnitude(z, False)}. "
+        f"{suggestion}"
+    )
+
+    return {"title": f"Improve {label}", "detail": detail, "phase": phase_label,
+            "whyItMatters": why, "takeaway": suggestion}
+
+
+def generate_match_analysis(
+    stat_breakdown: dict[str, dict[str, float]],
+    phase_stats: dict | None,
+    position: int,
+    overall_position_score: float | None,
+    weakest_phase: str | None,
+    is_partial: bool,
+    scored_stat_count: int = 0,
+) -> dict | None:
+    """
+    Generate richer match analysis buckets: wentWell, hurtMost, workOn.
+    Returns a MatchAnalysisSchema-compatible dict, or None if data is thin.
+    """
+    if is_partial or not stat_breakdown or scored_stat_count < 3:
+        return None
+
+    # Flatten to (phase, stat, z), deduplicate by stat keeping most extreme z per stat
+    best_per_stat: dict[str, tuple[str, float]] = {}   # stat → (phase, z)
+    for phase, stats in stat_breakdown.items():
+        for stat, z in stats.items():
+            if stat not in best_per_stat or abs(z) > abs(best_per_stat[stat][1]):
+                best_per_stat[stat] = (phase, z)
+
+    positives = sorted(
+        [(stat, phase, z) for stat, (phase, z) in best_per_stat.items() if z > 0.4],
+        key=lambda x: x[2], reverse=True,
+    )
+    negatives = sorted(
+        [(stat, phase, z) for stat, (phase, z) in best_per_stat.items() if z < -0.4],
+        key=lambda x: x[2],
+    )
+
+    went_well = [_make_went_well_entry(phase, stat, z, phase_stats)
+                 for stat, phase, z in positives[:3]]
+    hurt_most = [_make_hurt_most_entry(phase, stat, z, phase_stats)
+                 for stat, phase, z in negatives[:3]]
+    work_on   = [_make_work_on_entry(phase, stat, z, position, weakest_phase)
+                 for stat, phase, z in negatives[:2]]
+
+    return {"wentWell": went_well, "hurtMost": hurt_most, "workOn": work_on}
+
+
+# ---------------------------------------------------------------------------
+# UI v2 — enriched recurring patterns with win/loss evidence
+# ---------------------------------------------------------------------------
+
+def _pattern_summary(label: str, frequency: int, total: int, is_strength: bool) -> str:
+    pct = round(frequency / max(total, 1) * 100)
+    direction = "strength" if is_strength else "weakness"
+    if frequency >= max(total * 0.7, 3):
+        consistency = "consistently"
+    elif frequency >= max(total * 0.5, 3):
+        consistency = "frequently"
+    else:
+        consistency = "repeatedly"
+    if is_strength:
+        return (
+            f"You {consistency} show above-benchmark {label} — it appeared as a strength "
+            f"in {frequency} of your last {total} matches ({pct}%). "
+            f"This is one of your more reliable positive patterns."
+        )
+    else:
+        return (
+            f"{label} appeared as a persistent {direction} in {frequency} of your last "
+            f"{total} matches ({pct}%). "
+            f"This is a recurring gap that shows up across different heroes and game states."
+        )
+
+
+def _win_loss_interpretation(label: str, is_strength: bool,
+                              has_wins: bool, has_losses: bool) -> str | None:
+    if not has_wins or not has_losses:
+        return None
+    if is_strength:
+        return (
+            f"In winning games, this {label} strength often combined with better overall impact "
+            f"conversion. In losses, the edge was still present but wasn't enough to overcome "
+            f"other deficits — suggesting it's a consistent positive but not a deciding factor alone."
+        )
+    else:
+        return (
+            f"In losses where {label} was flagged, the gap was more pronounced and likely "
+            f"contributed to the result. Even in some wins this area underperformed, "
+            f"confirming it as a persistent structural weakness rather than a situational one."
+        )
+
+
+def generate_recurring_pattern_entries(
+    match_records: list[dict],
+    threshold: int = 3,
+) -> list[dict]:
+    """
+    Build enriched recurring pattern entries from per-match records.
+
+    match_records: list of dicts with keys:
+      match_id, hero_name, won, overall_score, strengths (list[str]), weaknesses (list[str])
+
+    Returns list of RecurringPatternEntrySchema-compatible dicts.
+    """
+    if not match_records:
+        return []
+
+    total = len(match_records)
+    s_counter: Counter = Counter()
+    w_counter: Counter = Counter()
+
+    for r in match_records:
+        for label in (r.get("strengths") or []):
+            s_counter[label] += 1
+        for label in (r.get("weaknesses") or []):
+            w_counter[label] += 1
+
+    entries: list[dict] = []
+
+    def _make_entry(label: str, frequency: int, is_strength: bool) -> dict:
+        counter_key = "strengths" if is_strength else "weaknesses"
+        relevant = [r for r in match_records if label in (r.get(counter_key) or [])]
+        wins   = [r for r in relevant if r.get("won") is True]
+        losses = [r for r in relevant if r.get("won") is False]
+
+        win_ex = max(wins,   key=lambda r: r.get("overall_score") or 0, default=None)
+        loss_ex= max(losses, key=lambda r: -(r.get("overall_score") or 100), default=None)
+
+        def _ex(r):
+            if not r:
+                return None
+            return {
+                "matchId":      r["match_id"],
+                "heroName":     r.get("hero_name"),
+                "result":       "win" if r.get("won") else "loss",
+                "overallScore": r.get("overall_score"),
+            }
+
+        return {
+            "label":                 label,
+            "frequency":             frequency,
+            "totalMatches":          total,
+            "isStrength":            is_strength,
+            "summary":               _pattern_summary(label, frequency, total, is_strength),
+            "whyItMatters":          _STAT_WHY_MATTERS.get(label, "This metric reflects role effectiveness."),
+            "winExample":            _ex(win_ex),
+            "lossExample":           _ex(loss_ex),
+            "winLossInterpretation": _win_loss_interpretation(label, is_strength, bool(wins), bool(losses)),
+        }
+
+    for label, count in s_counter.most_common(3):
+        if count >= threshold:
+            entries.append(_make_entry(label, count, is_strength=True))
+
+    for label, count in w_counter.most_common(3):
+        if count >= threshold:
+            entries.append(_make_entry(label, count, is_strength=False))
+
+    return entries

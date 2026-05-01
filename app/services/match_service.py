@@ -37,6 +37,8 @@ from app.services.scoring_utils import (
     generate_biggest_liability,
     generate_improvement_suggestion,
     get_performance_archetype,
+    build_score_context,
+    generate_match_analysis,
 )
 from app.errors import MatchNotFoundError, StratzAPIError
 
@@ -158,6 +160,17 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
             for phase, ps in raw_phase_data.items()
         }
 
+        # UI v2 — score context + deep match analysis
+        match_analysis = generate_match_analysis(
+            stat_breakdown=stat_breakdown,
+            phase_stats=phase_stats,
+            position=position,
+            overall_position_score=scores.get("overall_position_score"),
+            weakest_phase=weakest_phase,
+            is_partial=False,
+            scored_stat_count=scored_stat_count,
+        )
+
         # Per-phase narratives using stat breakdown per phase
         phase_narrative = {
             phase: generate_phase_narrative(
@@ -229,6 +242,9 @@ def get_match_analysis(match_id: int, steam_id: int) -> MatchDetailResponse:
         improvementSuggestion=improvement_suggestion,
         performanceProfile=get_performance_archetype(position),
         phaseStats=phase_stats,
+        scoreContext=build_score_context(scores["overall_position_score"]) if scores.get("overall_position_score") is not None else None,
+        heroScoreContext=build_score_context(scores["overall_hero_score"]) if scores.get("overall_hero_score") is not None else None,
+        matchAnalysis=match_analysis,
     )
 
 

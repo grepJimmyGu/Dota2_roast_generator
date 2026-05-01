@@ -28,6 +28,46 @@ export interface BestHero {
   games: number;
 }
 
+export interface ScoreContext {
+  score: number;
+  benchmarkAvg: number;
+  percentile: number;
+  label: string;
+}
+
+export interface WinLossExample {
+  matchId: number;
+  heroName: string | null;
+  result: "win" | "loss";
+  overallScore: number | null;
+}
+
+export interface RecurringPatternEntry {
+  label: string;
+  frequency: number;
+  totalMatches: number;
+  isStrength: boolean;
+  summary: string;
+  whyItMatters: string;
+  winExample: WinLossExample | null;
+  lossExample: WinLossExample | null;
+  winLossInterpretation: string | null;
+}
+
+export interface AnalysisEntry {
+  title: string;
+  detail: string;
+  phase: string | null;
+  whyItMatters: string;
+  takeaway: string;
+}
+
+export interface MatchAnalysis {
+  wentWell: AnalysisEntry[];
+  hurtMost: AnalysisEntry[];
+  workOn:   AnalysisEntry[];
+}
+
 export interface PlayerOverview {
   steamId: number;
   playerName: string | null;
@@ -47,12 +87,13 @@ export interface PlayerOverview {
   lastRefreshedAt: string | null;
   dataCompleteness: DataCompleteness | null;
   recentMatches: MatchSummary[];
-  // UI v1 — richer content
+  // UI v1
   playerNarrative: string | null;
-  recurringStrengths: string[] | null;
-  recurringWeaknesses: string[] | null;
   consistencyRating: "Consistent" | "Variable" | "Volatile" | null;
   performanceArchetype: string | null;
+  // UI v2
+  scoreContext: ScoreContext | null;
+  recurringPatterns: RecurringPatternEntry[] | null;
 }
 
 export interface PhaseScore {
@@ -91,7 +132,7 @@ export interface MatchDetail {
   topWeaknesses: string[] | null;
   hasBenchmarkContext: boolean;
   isPartial: boolean;
-  // UI v1 — richer content
+  // UI v1
   matchNarrative: string | null;
   phaseNarrative: { early_game?: string; mid_game?: string; late_game?: string } | null;
   biggestEdge: string | null;
@@ -103,4 +144,8 @@ export interface MatchDetail {
     mid_game?: PhaseStatEntry;
     late_game?: PhaseStatEntry;
   } | null;
+  // UI v2
+  scoreContext: ScoreContext | null;
+  heroScoreContext: ScoreContext | null;
+  matchAnalysis: MatchAnalysis | null;
 }

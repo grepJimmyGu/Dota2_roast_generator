@@ -13,6 +13,53 @@ from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
+# UI v2 — richer interpretation schemas
+# ---------------------------------------------------------------------------
+
+class ScoreContextSchema(BaseModel):
+    """Percentile context for a single score value."""
+    score:        float
+    benchmarkAvg: float = 50.0   # always 50 by construction of the z-score formula
+    percentile:   float           # 0–100
+    label:        str             # "Top 10%", "Above average", etc.
+
+
+class AnalysisEntrySchema(BaseModel):
+    """One item in a match analysis bucket (went well / hurt most / work on)."""
+    title:        str
+    detail:       str             # 2–3 sentence explanation
+    phase:        Optional[str] = None
+    whyItMatters: str
+    takeaway:     str
+
+
+class MatchAnalysisSchema(BaseModel):
+    wentWell: list[AnalysisEntrySchema] = []
+    hurtMost: list[AnalysisEntrySchema] = []
+    workOn:   list[AnalysisEntrySchema] = []
+
+
+class WinLossExampleSchema(BaseModel):
+    matchId:      int
+    heroName:     Optional[str] = None
+    result:       str             # "win" | "loss"
+    overallScore: Optional[float] = None
+
+
+class RecurringPatternEntrySchema(BaseModel):
+    """Enriched recurring strength or weakness with win/loss evidence."""
+    label:                 str
+    frequency:             int
+    totalMatches:          int
+    isStrength:            bool
+    summary:               str
+    whyItMatters:          str
+    winExample:            Optional[WinLossExampleSchema] = None
+    lossExample:           Optional[WinLossExampleSchema] = None
+    winLossInterpretation: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
 # Shared building blocks
 # ---------------------------------------------------------------------------
 
@@ -87,11 +134,13 @@ class PlayerOverviewResponse(BaseModel):
     shortSummary: Optional[str] = None
 
     # UI v1 — richer player-level content
-    playerNarrative: Optional[str] = None          # multi-sentence profile synthesis
-    recurringStrengths: Optional[list[str]] = None  # labels appearing 3+ times in recent matches
-    recurringWeaknesses: Optional[list[str]] = None
-    consistencyRating: Optional[str] = None         # "Consistent" | "Variable" | "Volatile"
-    performanceArchetype: Optional[str] = None       # position-based label (e.g. "Space Creator")
+    playerNarrative:      Optional[str] = None
+    consistencyRating:    Optional[str] = None
+    performanceArchetype: Optional[str] = None
+
+    # UI v2 — score context + enriched recurring patterns
+    scoreContext:      Optional[ScoreContextSchema] = None
+    recurringPatterns: Optional[list[RecurringPatternEntrySchema]] = None
 
     # Cache / freshness metadata
     isStale: bool = False
@@ -134,13 +183,18 @@ class MatchDetailResponse(BaseModel):
     isPartial: bool = False
 
     # UI v1 — richer match-level content
-    matchNarrative: Optional[str] = None                  # multi-sentence match analysis
-    phaseNarrative: Optional[dict] = None                 # {phase: narrative_text}
-    biggestEdge: Optional[str] = None                     # top strength with context sentence
-    biggestLiability: Optional[str] = None                # top weakness with context sentence
-    improvementSuggestion: Optional[str] = None           # one actionable next step
-    performanceProfile: Optional[str] = None              # position-based archetype label
-    phaseStats: Optional[dict] = None                     # {phase: {stat: value}} for display
+    matchNarrative: Optional[str] = None
+    phaseNarrative: Optional[dict] = None
+    biggestEdge: Optional[str] = None
+    biggestLiability: Optional[str] = None
+    improvementSuggestion: Optional[str] = None
+    performanceProfile: Optional[str] = None
+    phaseStats: Optional[dict] = None
+
+    # UI v2 — score context + deep analysis
+    scoreContext:      Optional[ScoreContextSchema] = None
+    heroScoreContext:  Optional[ScoreContextSchema] = None
+    matchAnalysis:     Optional[MatchAnalysisSchema] = None
 
 
 # ---------------------------------------------------------------------------

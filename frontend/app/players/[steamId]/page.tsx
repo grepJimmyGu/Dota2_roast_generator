@@ -9,6 +9,8 @@ import MatchCard from "@/components/MatchCard";
 import { loadProfile, saveProfile } from "@/lib/profile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import RoastCard from "@/components/RoastCard";
+import PercentileBar from "@/components/PercentileBar";
+import RecurringPatternCard from "@/components/RecurringPatternCard";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -179,6 +181,13 @@ export default function PlayerOverviewPage() {
                 )}
               </div>
 
+              {/* Percentile bar */}
+              {data.scoreContext && (
+                <div className="border-t border-gray-800 pt-3">
+                  <PercentileBar ctx={data.scoreContext} label={t.roleAvg} />
+                </div>
+              )}
+
               {data.playerNarrative && (
                 <p className="text-gray-400 text-sm leading-relaxed border-t border-gray-800 pt-3">
                   {data.playerNarrative}
@@ -191,58 +200,40 @@ export default function PlayerOverviewPage() {
           <RoastCard steamId={steamIdNum} />
 
           {/* Bucket 2: Strength Profile */}
-          {(data.recurringStrengths?.length || data.bestHeroes?.length) && (
+          {(data.recurringPatterns?.some(p => p.isStrength) || data.bestHeroes?.length) && (
             <div className="flex flex-col gap-3">
               <SectionHeader label={t.sectionStrengthProfile} />
-              <div className="bg-gray-900 rounded-xl p-4 flex flex-col gap-4">
-                {data.recurringStrengths && data.recurringStrengths.length > 0 && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">{t.recurringStrengths}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {data.recurringStrengths.map((s) => (
-                        <span key={s} className="text-xs bg-green-900/30 text-green-400 border border-green-800/40 px-2 py-1 rounded-full">
-                          ▲ {s}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {data.bestHeroes && data.bestHeroes.length > 0 && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-2">{t.bestHeroes}</p>
-                    <div className="flex flex-col gap-2">
-                      {data.bestHeroes.map((h) => (
-                        <div key={h.heroId} className="flex items-center justify-between">
-                          <span className="text-sm text-white">{h.heroName}</span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-500">{h.games}g</span>
-                            <span className="text-sm font-medium text-yellow-400 tabular-nums">
-                              {h.avgScore.toFixed(1)}
-                            </span>
-                          </div>
+              {data.recurringPatterns?.filter(p => p.isStrength).map((pattern, i) => (
+                <RecurringPatternCard key={i} pattern={pattern} steamId={steamIdNum} />
+              ))}
+              {data.bestHeroes && data.bestHeroes.length > 0 && (
+                <div className="bg-gray-900 rounded-xl p-4">
+                  <p className="text-xs text-gray-500 mb-2">{t.bestHeroes}</p>
+                  <div className="flex flex-col gap-2">
+                    {data.bestHeroes.map((h) => (
+                      <div key={h.heroId} className="flex items-center justify-between">
+                        <span className="text-sm text-white">{h.heroName}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-500">{h.games}g</span>
+                          <span className="text-sm font-medium text-yellow-400 tabular-nums">
+                            {h.avgScore.toFixed(1)}
+                          </span>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* Bucket 3: Recurring Issues */}
-          {data.recurringWeaknesses && data.recurringWeaknesses.length > 0 && (
+          {data.recurringPatterns?.some(p => !p.isStrength) && (
             <div className="flex flex-col gap-3">
               <SectionHeader label={t.sectionRecurringIssues} />
-              <div className="bg-gray-900 rounded-xl p-4">
-                <p className="text-xs text-gray-500 mb-2">{t.recurringWeaknesses}</p>
-                <div className="flex flex-wrap gap-2">
-                  {data.recurringWeaknesses.map((w) => (
-                    <span key={w} className="text-xs bg-red-900/30 text-red-400 border border-red-800/40 px-2 py-1 rounded-full">
-                      ▼ {w}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              {data.recurringPatterns.filter(p => !p.isStrength).map((pattern, i) => (
+                <RecurringPatternCard key={i} pattern={pattern} steamId={steamIdNum} />
+              ))}
             </div>
           )}
 

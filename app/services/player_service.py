@@ -42,6 +42,8 @@ from app.services.scoring_utils import (
     compute_consistency_rating,
     compute_recurring_patterns,
     get_performance_archetype,
+    build_score_context,
+    generate_recurring_pattern_entries,
 )
 from app.errors import PlayerNotFoundError, StratzAPIError
 
@@ -144,11 +146,11 @@ def _build_cached_overview(
 
     score_rows = list(scores_by_match.values())
     strongest_phase, weakest_phase = _compute_player_phase_labels(score_rows)
-    recent_trend   = _compute_recent_trend(scored)
-    archetype      = _compute_archetype(matches)
+    recent_trend = _compute_recent_trend(scored)
+    archetype    = _compute_archetype(matches)
     recurring_s, recurring_w = compute_recurring_patterns(score_rows)
-    consistency    = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
-    short_summary  = generate_player_summary(
+    consistency  = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
+    short_summary = generate_player_summary(
         strongest_phase=strongest_phase, weakest_phase=weakest_phase,
         recent_trend=recent_trend, average_overall_score=agg.get("averageOverallScore"),
         match_count=len(matches),
@@ -159,6 +161,9 @@ def _build_cached_overview(
         consistency_rating=consistency, recent_trend=recent_trend,
         average_overall_score=agg.get("averageOverallScore"), match_count=len(matches),
     )
+    match_records = _build_pattern_records(matches, scores_by_match)
+    recurring_patterns = generate_recurring_pattern_entries(match_records)
+    avg_score = agg.get("averageOverallScore")
 
     return PlayerOverviewResponse(
         steamId=steam_id,
@@ -166,7 +171,7 @@ def _build_cached_overview(
         avatarUrl=player.avatar_url,
         rank=player.rank,
         recentMatchCount=len(matches),
-        averageOverallScore=agg.get("averageOverallScore"),
+        averageOverallScore=avg_score,
         averagePositionScore=agg.get("averagePositionScore"),
         averageHeroScore=agg.get("averageHeroScore"),
         strongestPhase=strongest_phase,
@@ -175,10 +180,10 @@ def _build_cached_overview(
         bestHeroes=_compute_best_heroes(scored),
         recentTrend=recent_trend,
         playerNarrative=player_narrative,
-        recurringStrengths=recurring_s,
-        recurringWeaknesses=recurring_w,
         consistencyRating=consistency,
         performanceArchetype=archetype,
+        scoreContext=build_score_context(avg_score) if avg_score is not None else None,
+        recurringPatterns=recurring_patterns or None,
         isStale=is_stale,
         refreshRecommended=is_stale,
         lastRefreshedAt=player.last_refreshed_at,
@@ -310,14 +315,15 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         failedMatchCount=fail_count,
     )
 
-    all_scores = sr.get_for_player(steam_id, limit=match_count)
+    all_scores  = sr.get_for_player(steam_id, limit=match_count)
     matches_orm = mr.get_for_player(steam_id, limit=match_count)
+    scores_by_match_all = {s.match_id: s for s in all_scores}
     strongest_phase, weakest_phase = _compute_player_phase_labels(all_scores)
-    recent_trend   = _compute_recent_trend(scored)
-    archetype      = _compute_archetype(matches_orm)
+    recent_trend = _compute_recent_trend(scored)
+    archetype    = _compute_archetype(matches_orm)
     recurring_s, recurring_w = compute_recurring_patterns(all_scores)
-    consistency    = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
-    short_summary  = generate_player_summary(
+    consistency  = compute_consistency_rating([s.overallPositionScore for s in scored if s.overallPositionScore is not None])
+    short_summary = generate_player_summary(
         strongest_phase=strongest_phase, weakest_phase=weakest_phase,
         recent_trend=recent_trend, average_overall_score=agg.get("averageOverallScore"),
         match_count=len(df),
@@ -328,6 +334,9 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         consistency_rating=consistency, recent_trend=recent_trend,
         average_overall_score=agg.get("averageOverallScore"), match_count=len(df),
     )
+    match_records = _build_pattern_records(matches_orm, scores_by_match_all)
+    recurring_patterns = generate_recurring_pattern_entries(match_records)
+    avg_score = agg.get("averageOverallScore")
 
     return PlayerOverviewResponse(
         steamId=steam_id,
@@ -335,7 +344,7 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         avatarUrl=player.avatar_url,
         rank=player.rank,
         recentMatchCount=len(df),
-        averageOverallScore=agg.get("averageOverallScore"),
+        averageOverallScore=avg_score,
         averagePositionScore=agg.get("averagePositionScore"),
         averageHeroScore=agg.get("averageHeroScore"),
         strongestPhase=strongest_phase,
@@ -344,10 +353,10 @@ def _do_live_refresh(steam_id: int, match_count: int, db: Session) -> PlayerOver
         bestHeroes=_compute_best_heroes(scored),
         recentTrend=recent_trend,
         playerNarrative=player_narrative,
-        recurringStrengths=recurring_s,
-        recurringWeaknesses=recurring_w,
         consistencyRating=consistency,
         performanceArchetype=archetype,
+        scoreContext=build_score_context(avg_score) if avg_score is not None else None,
+        recurringPatterns=recurring_patterns or None,
         isStale=False,
         refreshRecommended=False,
         lastRefreshedAt=player.last_refreshed_at,
@@ -524,6 +533,24 @@ def _compute_best_heroes(scored: list[MatchSummarySchema]) -> list[dict] | None:
         reverse=True,
     )
     return ranked[:3] or None
+
+
+def _build_pattern_records(matches, scores_by_match: dict) -> list[dict]:
+    """Build flat dicts for generate_recurring_pattern_entries from ORM objects."""
+    records = []
+    for m in matches:
+        score = scores_by_match.get(m.match_id)
+        if not score:
+            continue
+        records.append({
+            "match_id":      m.match_id,
+            "hero_name":     m.hero_name,
+            "won":           m.won,
+            "overall_score": score.overall_position_score,
+            "strengths":     score.top_strengths  or [],
+            "weaknesses":    score.top_weaknesses or [],
+        })
+    return records
 
 
 def _compute_archetype(matches) -> str | None:

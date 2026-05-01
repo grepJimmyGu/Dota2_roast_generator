@@ -41,15 +41,17 @@ religion, sexuality, disability, or mental health
 - Do not make the critique purely abusive — it must remain data-backed
 - Make it feel like a data-backed roast, not random flaming
 
+Language rule: ALL field values in the JSON must be in Chinese. Do not use English for any field value — no English role names, no English stat names, no English words in tags or verdicts.
+
 Return a JSON object with this exact schema:
 {
-  "title": "短标题（10字以内）",
-  "primary_role": "主要位置",
-  "overall_verdict": "一句话总结（20字以内）",
+  "title": "短标题（10字以内，中文）",
+  "primary_role": "主要位置（中文，例如：核心、中单、上路、游走辅助、硬辅）",
+  "overall_verdict": "一句话总结（20字以内，中文）",
   "critique": "正文（至少350中文字）",
-  "key_problem_tags": ["问题标签1", "问题标签2"],
-  "evidence_used": [{"match_id": "...", "reason": "引用原因"}],
-  "final_punchline": "结尾神评论（30字以内）",
+  "key_problem_tags": ["中文问题标签1", "中文问题标签2"],
+  "evidence_used": [{"match_id": "...", "reason": "中文引用原因"}],
+  "final_punchline": "结尾神评论（30字以内，中文）",
   "tone": "light | medium | high"
 }
 
@@ -66,30 +68,13 @@ def build_longform_critique_prompt(context: dict, language: str = "zh") -> tuple
     Build (system_prompt, user_prompt) for the LLM.
     language parameter reserved for future EN support; currently always zh.
     """
-    # Omit null fields from evidence to reduce token count
-    evidence = context.get("selected_evidence", {})
-    clean_evidence: dict = {}
-    for key, val in evidence.items():
-        if val is None:
-            continue
-        clean_evidence[key] = {k: v for k, v in val.items() if v is not None}
-
-    # Build compact context for user prompt
-    user_context = {
-        "player_name":            context.get("player_name"),
-        "total_matches":          context.get("total_matches"),
-        "primary_role":           context.get("primary_role"),
-        "critique_focus":         context.get("critique_focus"),
-        "tone_level":             context.get("tone_level"),
-        "overall_summary": {
-            k: v for k, v in (context.get("overall_summary") or {}).items()
-            if v is not None and v != [] and v != {}
-        },
-        "role_patterns": context.get("role_patterns", {}),
-        "recurring_roast_tags":   context.get("recurring_roast_tags", []),
-        "selected_evidence":      clean_evidence,
+    # Context is already translated to Chinese by build_longform_critique_context.
+    # Strip None / empty values to reduce token count.
+    clean_context = {
+        k: v for k, v in context.items()
+        if v is not None and v != [] and v != {}
     }
 
-    user_prompt = f"Player context (JSON):\n{json.dumps(user_context, ensure_ascii=False, indent=2)}"
+    user_prompt = f"玩家数据（JSON）:\n{json.dumps(clean_context, ensure_ascii=False, indent=2)}"
 
     return _SYSTEM_PROMPT, user_prompt
